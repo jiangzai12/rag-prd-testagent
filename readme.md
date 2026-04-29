@@ -6,7 +6,7 @@
 ![LLM](https://img.shields.io/badge/LLM-Google%20Gemini-orange)
 
 > **"从精准检索到智能共创，重塑测试用例生成体验。"**
-本项目来源于字节训练营，个人结题项目，希望对尝试测开方向小伙伴们有一定的学习与帮忙
+本项目来源于https://github.com/zxLeva/ByteDance--Auto_prd_test_agent的项目，感谢大佬开源，基于项目进行二次开发，希望对尝试测开方向小伙伴们有一定的学习与帮忙
 Auto_prd_test_expert 是一款基于 **“轻量化本地部署 + 企业级大模型 API”** 混合架构的智能测试助手。它采用 **Advanced RAG** 和 **Human-in-the-Loop** 闭环设计，解决了传统工具“各种幻觉”、“无法微调”、“流程割裂”的痛点，是一个具备记忆与质检能力的可进化测试管家。
 
 ---
@@ -63,18 +63,6 @@ Auto_prd_test_expert 是一款基于 **“轻量化本地部署 + 企业级大�
     *   **差异化比对**：若上传了标准用例 (Golden Sample)，自动计算偏差。
 *   **📤 结果**：输出可视化的**质量评估报告**（包含评分、漏测点、优化建议）。
 
----
-
-## 📸 Demo 展示
-
-> *![alt text](image-1.png)*
-> *   **图 1**: 上传多模态文件进行RAG向量库生成与UI前端可视化预览，搜寻、删除、下载与核心摘要生成
-![alt text](image-2.png)![alt text](image-3.png)
-> *   **图 2**: 构建RAG知识库的污染文件与利用RAG知识库与LLM进行相关知识检索生成
-![alt text](image-4.png)![alt text](image-5.png)![alt text](image-6.png)![alt text](image-7.png)![alt text](image-8.png)
-> *   **图 3**: 进行测试用例生成后人工微调、查看、多种格式下载、入库
-![alt text](image-9.png)
-> *   **图 4**: 测试专家对测试用例评估效果展示
 ---
 
 ## 🛠️ 三、技术栈与架构
