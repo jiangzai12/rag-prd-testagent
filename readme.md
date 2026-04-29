@@ -6,7 +6,7 @@
 ![LLM](https://img.shields.io/badge/LLM-Google%20Gemini-orange)
 
 > **"从精准检索到智能共创，重塑测试用例生成体验。"**
-本项目来源于https://github.com/zxLeva/ByteDance--Auto_prd_test_agent的项目，感谢大佬开源，基于项目进行二次开发，希望对尝试测开方向小伙伴们有一定的学习与帮忙
+本项目来源于 https://github.com/zxLeva/ByteDance--Auto_prd_test_agent  的项目，感谢大佬开源，基于项目进行二次开发，希望对尝试测开方向小伙伴们有一定的学习与帮忙
 Auto_prd_test_expert 是一款基于 **“轻量化本地部署 + 企业级大模型 API”** 混合架构的智能测试助手。它采用 **Advanced RAG** 和 **Human-in-the-Loop** 闭环设计，解决了传统工具“各种幻觉”、“无法微调”、“流程割裂”的痛点，是一个具备记忆与质检能力的可进化测试管家。
 
 ---
