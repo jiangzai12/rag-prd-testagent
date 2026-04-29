@@ -1,20 +1,42 @@
-# 1. Python 缓存
-__pycache__/
-*.pyc
-
-# 2. 环境变量与密钥 (绝不能提交)
-.env
-.venv
-venv/
-
-# 3. IDE 配置
+# OS / Editor
+.DS_Store
+Thumbs.db
+Desktop.ini
 .vscode/
 .idea/
 
-# 4. 【核心】忽略数据文件，防止 Key 和公司文档泄露
-data/vector_db/
-data/raw_files/
+# Python cache / build artifacts
+__pycache__/
+*.py[cod]
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+pip-wheel-metadata/
+
+# Virtual environments
+.env
+.venv/
+venv/
+env/
+ENV/
+
+# Local secrets and runtime config
+.env.*
+!.env.example
 data/user_config.json
 
-# 5. 保留 data 目录结构
+# Sensitive or generated data
+data/vector_db/
+data/raw_files/
+reports/**/history/
+*.sqlite3
+
+# Keep placeholder files for empty directories
 !data/.gitkeep
+!reports/regression/.gitkeep

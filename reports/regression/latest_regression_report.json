@@ -1,0 +1,91 @@
+{
+  "generated_at": "2026-03-15 13:16:24",
+  "suite_size": 4,
+  "baseline": {
+    "parse_success_rate": 75.0,
+    "schema_pass_rate": 50.0,
+    "avg_rule_score": 65.5,
+    "avg_coverage_rate": 50.0,
+    "hard_duplicates_total": 1,
+    "semantic_warnings_total": 0
+  },
+  "upgraded": {
+    "parse_success_rate": 75.0,
+    "schema_pass_rate": 100.0,
+    "avg_rule_score": 95.5,
+    "avg_coverage_rate": 50.0,
+    "hard_duplicates_removed_total": 1,
+    "semantic_warnings_total": 0,
+    "repair_used_count": 2
+  },
+  "delta": {
+    "parse_success_rate": 0.0,
+    "schema_pass_rate": 50.0,
+    "avg_rule_score": 30.0,
+    "avg_coverage_rate": 0.0,
+    "hard_duplicates_improvement": 1,
+    "semantic_warnings_total": 0
+  },
+  "samples": [
+    {
+      "id": "RS_001",
+      "title": "标准登录主流程",
+      "baseline_parse_success": true,
+      "upgraded_parse_success": true,
+      "baseline_schema_pass": true,
+      "upgraded_schema_pass": true,
+      "baseline_rule_score": 100,
+      "upgraded_rule_score": 100,
+      "baseline_coverage_rate": 100.0,
+      "upgraded_coverage_rate": 100.0,
+      "hard_removed": 0,
+      "semantic_warnings": 0,
+      "repair_used": false
+    },
+    {
+      "id": "RS_002",
+      "title": "字段缺失与非法优先级",
+      "baseline_parse_success": true,
+      "upgraded_parse_success": true,
+      "baseline_schema_pass": false,
+      "upgraded_schema_pass": true,
+      "baseline_rule_score": 71,
+      "upgraded_rule_score": 94,
+      "baseline_coverage_rate": 100.0,
+      "upgraded_coverage_rate": 100.0,
+      "hard_removed": 0,
+      "semantic_warnings": 0,
+      "repair_used": true
+    },
+    {
+      "id": "RS_003",
+      "title": "硬重复 + 边界值相似",
+      "baseline_parse_success": true,
+      "upgraded_parse_success": true,
+      "baseline_schema_pass": true,
+      "upgraded_schema_pass": true,
+      "baseline_rule_score": 91,
+      "upgraded_rule_score": 94,
+      "baseline_coverage_rate": 0.0,
+      "upgraded_coverage_rate": 0.0,
+      "hard_removed": 1,
+      "semantic_warnings": 0,
+      "repair_used": false
+    },
+    {
+      "id": "RS_004",
+      "title": "非结构化回复需要修复",
+      "baseline_parse_success": false,
+      "upgraded_parse_success": false,
+      "baseline_schema_pass": false,
+      "upgraded_schema_pass": true,
+      "baseline_rule_score": 0,
+      "upgraded_rule_score": 94,
+      "baseline_coverage_rate": 0.0,
+      "upgraded_coverage_rate": 0.0,
+      "hard_removed": 0,
+      "semantic_warnings": 0,
+      "repair_used": true
+    }
+  ]
+}

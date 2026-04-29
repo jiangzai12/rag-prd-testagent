@@ -30,5 +30,9 @@ def display_results(df, raw_json):
         c3.download_button("YAML", yaml_str, "cases.yaml", "text/yaml")
         
         # 4. Markdown
-        md_str = df.to_markdown(index=False)
+        try:
+            md_str = df.to_markdown(index=False)
+        except ImportError:
+            st.info("未检测到 tabulate,Markdown 导出已回退为纯文本表格。")
+            md_str = df.to_string(index=False)
         c4.download_button("Markdown", md_str, "cases.md", "text/markdown")

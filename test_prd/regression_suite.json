@@ -1,0 +1,48 @@
+[
+  {
+    "id": "RS_001",
+    "title": "标准登录主流程",
+    "prd_path": "test_prd/prd_test.txt",
+    "raw_response": "```json\n[\n  {\n    \"id\": \"TC_001\",\n    \"module\": \"登录\",\n    \"precondition\": \"用户已打开登录页\",\n    \"step\": \"输入正确手机号和正确验证码\",\n    \"expected\": \"登录成功并进入首页\",\n    \"priority\": \"P0\",\n    \"design_strategy\": \"正常流程\"\n  },\n  {\n    \"id\": \"TC_002\",\n    \"module\": \"登录\",\n    \"precondition\": \"用户已打开登录页\",\n    \"step\": \"输入正确手机号和错误验证码\",\n    \"expected\": \"提示验证码错误\",\n    \"priority\": \"P1\",\n    \"design_strategy\": \"异常场景\"\n  }\n]\n```"
+  },
+  {
+    "id": "RS_002",
+    "title": "字段缺失与非法优先级",
+    "prd_path": "test_prd/prd_test.txt",
+    "raw_response": "```json\n[\n  {\n    \"id\": \"TC_010\",\n    \"module\": \"登录\",\n    \"precondition\": \"用户已打开登录页\",\n    \"step\": \"输入空验证码\",\n    \"expected\": \"提示验证码不能为空\",\n    \"priority\": \"P3\"\n  }\n]\n```",
+    "repaired_cases": [
+      {
+        "id": "TC_010",
+        "module": "登录",
+        "precondition": "用户已打开登录页",
+        "step": "输入空验证码",
+        "expected": "提示验证码不能为空",
+        "priority": "P1",
+        "design_strategy": "异常场景"
+      }
+    ]
+  },
+  {
+    "id": "RS_003",
+    "title": "硬重复 + 边界值相似",
+    "prd_path": "test_prd/prd_test.txt",
+    "raw_response": "```json\n[\n  {\n    \"id\": \"TC_020\",\n    \"module\": \"登录\",\n    \"precondition\": \"用户已打开登录页\",\n    \"step\": \"输入长度为99的密码\",\n    \"expected\": \"提示密码超长\",\n    \"priority\": \"P1\",\n    \"design_strategy\": \"边界值\"\n  },\n  {\n    \"id\": \"TC_021\",\n    \"module\": \"登录\",\n    \"precondition\": \"用户已打开登录页\",\n    \"step\": \"输入长度为99的密码\",\n    \"expected\": \"提示密码超长\",\n    \"priority\": \"P1\",\n    \"design_strategy\": \"边界值\"\n  },\n  {\n    \"id\": \"TC_022\",\n    \"module\": \"登录\",\n    \"precondition\": \"用户已打开登录页\",\n    \"step\": \"输入长度为100的密码\",\n    \"expected\": \"提示密码超长\",\n    \"priority\": \"P1\",\n    \"design_strategy\": \"边界值\"\n  }\n]\n```"
+  },
+  {
+    "id": "RS_004",
+    "title": "非结构化回复需要修复",
+    "prd_path": "test_prd/prd_test.txt",
+    "raw_response": "这是我的分析：建议增加异常场景。最终结果如下（格式可能有问题）：[{\"id\":\"TC_030\",\"module\":\"登录\",\"precondition\":\"已打开页面\",\"step\":\"验证码为空\",\"expected\":\"提示不能为空\",\"priority\":\"P1\"}]",
+    "repaired_cases": [
+      {
+        "id": "TC_030",
+        "module": "登录",
+        "precondition": "已打开页面",
+        "step": "验证码为空",
+        "expected": "提示不能为空",
+        "priority": "P1",
+        "design_strategy": "异常场景"
+      }
+    ]
+  }
+]

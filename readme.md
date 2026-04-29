@@ -210,3 +210,85 @@ $env:HTTPS_PROXY="http://127.0.0.1:7890"
 streamlit run ui/main.py
 ```
 
+---
+
+## 🧪 回归套件与指标看板
+
+为固化质量改造收益，项目新增了最小回归集与可复测指标看板。
+
+### 回归样本
+
+回归样本位于 `test_prd/regression_suite.json`，覆盖以下典型问题：
+1. 标准结构化输出。
+2. 字段缺失与非法优先级。
+3. 硬重复 + 边界值相似场景。
+4. 非结构化回复（需修复）。
+
+### 运行方式
+
+1. UI 运行（推荐）
+    - 启动应用后，进入 `📈 回归看板` Tab。
+    - 点击 `▶️ 运行最小回归套件`。
+
+2. 命令行运行
+```bash
+python scripts/run_regression_suite.py
+```
+
+### 产物文件
+
+产物会写入 `reports/regression/`：
+1. `latest_regression_report.json`（机器可读）
+2. `latest_regression_report.md`（人工看板）
+
+### 指标说明
+
+1. Schema通过率
+2. 平均规则分
+3. 平均覆盖率
+4. 硬去重移除总数
+5. 语义近似告警总数（仅告警不自动删除）
+
+## 🧪 RAG 离线评测看板
+
+为评估 RAG 检索与问答质量，项目新增离线评测体系（评测集驱动）。
+
+### 评测集
+
+- 评测集文件：`test_prd/rag_eval_suite.json`
+- 内容结构：`corpus`（评测语料）+ `qa_samples`（问答样本与期望来源）
+
+### 指标
+
+1. Recall@K：Top-K 召回命中期望来源的平均比例。
+2. 误召回率：Top-K 召回中非期望来源的平均占比。
+3. 幻觉率：命中禁用关键词、无依据强答、或不可回答却未拒答的比例。
+
+### 运行方式
+
+1. UI 运行（推荐）
+    - 启动应用后，进入 `🧪 评测看板` Tab。
+    - 点击 `▶️ 运行 RAG 离线评测`。
+
+2. 命令行运行
+```bash
+python scripts/run_rag_eval_suite.py
+```
+
+3. 纯离线运行（断网可用）
+```bash
+python scripts/run_rag_eval_suite.py --offline
+```
+
+离线模式说明：
+1. 不调用 Gemini API，使用本地词法召回评估检索指标。
+2. 若评测样本包含 `offline_answer` 字段，可继续计算幻觉率。
+3. 若未提供 `offline_answer`，则仅评估 Recall@K 与误召回率，幻觉率标记为不可评估。
+
+### 产物文件
+
+产物会写入 `reports/rag_eval/`：
+1. `latest_rag_eval_report.json`（机器可读）
+2. `latest_rag_eval_report.md`（人工看板）
+3. `history/*.json`（每次运行历史快照）
+

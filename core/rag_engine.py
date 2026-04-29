@@ -20,7 +20,7 @@ if not os.path.exists(DOC_PATH):
 
 class TextSplitter:
     """
-    简易的递归文本切片器 (纯Python实现，不依赖LangChain)
+    简易的递归文本切片器 (纯Python实现,不依赖LangChain)
     """
     @staticmethod
     def recursive_split(text, chunk_size=500, chunk_overlap=100):
@@ -109,7 +109,7 @@ class RAGEngine:
             file_obj.seek(0)
             
             prompt = PromptManager.MULTIMODAL_PARSE_PROMPT
-            
+            #调用模型解析不同类型的文件内容，目前支持图片和PDF，其他类型直接读取文本内容返回
             if "image" in file_type:
                 img = Image.open(file_obj)
                 content_part = [prompt, img]
@@ -146,7 +146,8 @@ class RAGEngine:
         
         ids = []
         documents = []
-        metadatas = []
+        metadatas = [] 
+        # metadata 相当于每个 chunk 的标签，方便后续查询时知道这个 chunk 是哪个文档的，来源是什么，摘要是什么，等等信息
         
         for i, chunk in enumerate(chunks):
             chunk_id = f"{file_doc_id}_chunk_{i}"
@@ -165,7 +166,7 @@ class RAGEngine:
         self.knowledge_coll.add(documents=documents, metadatas=metadatas, ids=ids)
 
     def add_history_case(self, prd_text, final_json, summary=""):
-        if isinstance(final_json, (dict, list)):
+        if isinstance(final_json, (dict, list)):# 兼容直接传字符串的情况 isinstance函数可以同时检查多个类型
             final_json = json.dumps(final_json, ensure_ascii=False)
         file_doc_id = str(uuid.uuid4())
         self.history_coll.add(
@@ -227,15 +228,18 @@ class RAGEngine:
         context_parts = []
         sources = []
         if use_knowledge:
-            res_k = self.knowledge_coll.query(query_texts=[query], n_results=3)
+            res_k = self.knowledge_coll.query(query_texts=[query], n_results=3) 
+            # 这里改成3，增加返回的相关片段数量，提升上下文丰富度
             if res_k['documents'] and res_k['documents'][0]:
-                for i, doc in enumerate(res_k['documents'][0]):
+                for i, doc in enumerate(res_k['documents'][0]): 
+                    #enumerate() 函数用于将一个可遍历的数据对象（如列表、元组或字符串）组合为一个索引序列，同时列出数据和数据下标，常用于在循环中获取元素的索引和值。
                     meta = res_k['metadatas'][0][i]
                     src = meta.get('source', 'unknown')
                     context_parts.append(f"【技术规范片段 ({src})】:\n...{doc}...")
                     sources.append(f"📚 {src}")
         if use_history:
-            res_h = self.history_coll.query(query_texts=[query], n_results=1)
+            res_h = self.history_coll.query(query_texts=[query], n_results=1) 
+            # 历史用例只取最相关的一个，保持上下文的针对性和精简性
             if res_h['documents'] and res_h['documents'][0]:
                 for i, doc in enumerate(res_h['documents'][0]):
                     summary = res_h['metadatas'][0][i].get('summary', '历史案例')

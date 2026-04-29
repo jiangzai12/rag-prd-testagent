@@ -1,0 +1,107 @@
+{
+  "suite_name": "login_security_rag_offline_suite_v1",
+  "corpus": [
+    {
+      "doc_id": "spec_001",
+      "source": "login_lock_policy.md",
+      "text": "B端登录安全校验标准：当同一 login_account 连续输入错误密码达到 5 次时，系统必须锁定账号 15 分钟，锁定期间即使输入正确密码也提示账号已锁定。该项为 P0 红线。"
+    },
+    {
+      "doc_id": "spec_002",
+      "source": "session_timeout_policy.md",
+      "text": "会话生命周期管理：用户登录成功后静止 30 分钟，Session 或 Token 必须自动失效。前端应感知 401 并跳转登录页。该项为 P0 红线。"
+    },
+    {
+      "doc_id": "spec_003",
+      "source": "initial_password_policy.md",
+      "text": "初始密码强制策略：用户使用重置后的默认密码首次登录时，必须强制跳转到修改密码页面。在修改成功前，不允许进入其他业务页面。该项为 P0 红线。"
+    },
+    {
+      "doc_id": "noise_001",
+      "source": "coffee_history.txt",
+      "text": "咖啡起源于埃塞俄比亚牧羊人传说，后传播至阿拉伯与欧洲。伦敦咖啡馆曾被称为便士大学。"
+    },
+    {
+      "doc_id": "noise_002",
+      "source": "mars_colony.txt",
+      "text": "火星殖民需要解决生命维持系统、水资源与辐射问题。火星重力约为地球的 38%。"
+    }
+  ],
+  "qa_samples": [
+    {
+      "id": "RAG_001",
+      "title": "账号锁定阈值与时长",
+      "query": "连续输错密码几次会锁定，锁定多久？",
+      "top_k": 3,
+      "expected_sources": [
+        "login_lock_policy.md"
+      ],
+      "forbidden_answer_keywords": [
+        "3 次",
+        "10 次",
+        "30 分钟锁定"
+      ],
+      "offline_answer": "连续输错密码 5 次会锁定账号，锁定时长 15 分钟。"
+    },
+    {
+      "id": "RAG_002",
+      "title": "会话失效机制",
+      "query": "登录后静置多久会失效？前端应该怎么处理？",
+      "top_k": 3,
+      "expected_sources": [
+        "session_timeout_policy.md"
+      ],
+      "forbidden_answer_keywords": [
+        "60 分钟",
+        "永不过期",
+        "无需跳转"
+      ],
+      "offline_answer": "静置 30 分钟后 Session 或 Token 失效，前端应感知 401 并跳转登录页。"
+    },
+    {
+      "id": "RAG_003",
+      "title": "首次登录路由限制",
+      "query": "默认密码首次登录后允许直接进入首页吗？",
+      "top_k": 3,
+      "expected_sources": [
+        "initial_password_policy.md"
+      ],
+      "forbidden_answer_keywords": [
+        "可以直接进入首页",
+        "无需修改密码"
+      ],
+      "offline_answer": "不允许直接进入首页，必须强制跳转到修改密码页面，修改成功前不能进入业务页面。"
+    },
+    {
+      "id": "RAG_004",
+      "title": "不可回答问题应拒答",
+      "query": "支付退款多久到账？",
+      "top_k": 3,
+      "expected_sources": [],
+      "unanswerable": true,
+      "forbidden_answer_keywords": [
+        "24 小时",
+        "72 小时",
+        "立即到账"
+      ],
+      "offline_answer": "信息不足，无法确定退款到账时长。"
+    },
+    {
+      "id": "RAG_005",
+      "title": "P0 红线归纳",
+      "query": "请总结登录安全验收中的 P0 红线要点。",
+      "top_k": 3,
+      "expected_sources": [
+        "login_lock_policy.md",
+        "session_timeout_policy.md",
+        "initial_password_policy.md"
+      ],
+      "forbidden_answer_keywords": [
+        "P2",
+        "可忽略",
+        "与安全无关"
+      ],
+      "offline_answer": "P0 红线包括：5 次失败锁定 15 分钟、30 分钟会话失效并跳转登录、首次默认密码必须强制改密。"
+    }
+  ]
+}

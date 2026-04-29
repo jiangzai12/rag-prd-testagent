@@ -11,9 +11,24 @@ from config.settings import setup_proxy
 from config.prompts import PromptManager
 from ui.sidebar import render_sidebar
 from ui.components import display_results
-from core.llm_client import get_gemini_chat_response, generate_summary, extract_json_from_text
+from core.llm_client import (
+    get_gemini_chat_response,
+    generate_summary,
+    extract_json_from_text,
+    extract_json_with_error,
+    repair_test_case_json_once
+)
+from core.case_validator import validate_test_cases
+from core.dedup_engine import apply_dedup_strategy
 from core.rag_engine import RAGEngine
 from core.evaluator import Evaluator # 新增引用
+from core.regression_runner import run_regression_suite, load_latest_regression_report
+from core.rag_offline_eval import (
+    run_rag_offline_evaluation,
+    load_latest_rag_eval_report,
+    list_rag_eval_reports,
+    load_rag_eval_report
+)
 
 def split_text_and_json(text):
     """分离 AI 回复中的【分析说明】和【JSON数据】"""
@@ -44,6 +59,51 @@ def split_text_and_json(text):
         
     return text, json_data
 
+def validate_or_repair_cases(api_key, model_name, response_text):
+    """解析、校验并在失败时进行一次自动修复。"""
+    parsed_json, parse_error = extract_json_with_error(response_text)
+    first_round_errors = []
+
+    if parsed_json is not None:
+        is_valid, errors, normalized = validate_test_cases(parsed_json)
+        if is_valid:
+            dedup_result = apply_dedup_strategy(normalized)
+            return dedup_result["cases"], {
+                "status": "passed",
+                "attempts": 1,
+                "errors": [],
+                "hard_removed": dedup_result.get("hard_removed", []),
+                "semantic_warnings": dedup_result.get("semantic_warnings", [])
+            }
+        first_round_errors.extend(errors)
+    else:
+        first_round_errors.append(parse_error or "未能解析出 JSON 数据")
+
+    repaired_json, _, repair_parse_error = repair_test_case_json_once(
+        api_key,
+        model_name,
+        response_text,
+        first_round_errors
+    )
+
+    if repaired_json is None:
+        all_errors = first_round_errors + [repair_parse_error or "自动修复后仍无法解析 JSON"]
+        return None, {"status": "failed", "attempts": 2, "errors": all_errors}
+
+    repaired_valid, repaired_errors, repaired_normalized = validate_test_cases(repaired_json)
+    if repaired_valid:
+        dedup_result = apply_dedup_strategy(repaired_normalized)
+        return dedup_result["cases"], {
+            "status": "repaired",
+            "attempts": 2,
+            "errors": first_round_errors,
+            "hard_removed": dedup_result.get("hard_removed", []),
+            "semantic_warnings": dedup_result.get("semantic_warnings", [])
+        }
+
+    all_errors = first_round_errors + ["自动修复后仍未通过结构化校验"] + repaired_errors
+    return None, {"status": "failed", "attempts": 2, "errors": all_errors}
+
 def main():
     setup_proxy()
     st.set_page_config(page_title="Auto_prd_test_expert", layout="wide")
@@ -58,6 +118,11 @@ def main():
     if 'processed_files' not in st.session_state: st.session_state['processed_files'] = []
     # 新增：评估报告状态
     if 'eval_report' not in st.session_state: st.session_state['eval_report'] = None
+    if 'validation_status' not in st.session_state: st.session_state['validation_status'] = None
+    if 'dedup_report' not in st.session_state: st.session_state['dedup_report'] = None
+    if 'regression_report' not in st.session_state: st.session_state['regression_report'] = None
+    if 'rag_eval_report' not in st.session_state: st.session_state['rag_eval_report'] = None
+    if 'rag_eval_history' not in st.session_state: st.session_state['rag_eval_history'] = []
 
     api_key, selected_model = render_sidebar()
     rag_engine = None
@@ -72,7 +137,12 @@ def main():
 
     st.title("🤖 Auto_prd_test_expert")
 
-    tab_work, tab_manage = st.tabs(["💬 智能共创工作台", "📚 知识库管理"])
+    tab_work, tab_manage, tab_regression, tab_rag_eval = st.tabs([
+        "💬 智能共创工作台",
+        "📚 知识库管理",
+        "📈 回归看板",
+        "🧪 评测看板"
+    ])
 
     # ==================== Tab 1: 共创工作台 ====================
     with tab_work:
@@ -172,11 +242,30 @@ def main():
                         
                         st.session_state['gemini_history'] = updated_history
                         st.session_state['messages'].append({"role": "assistant", "content": resp_text})
-                        
-                        json_data = extract_json_from_text(resp_text)
-                        if json_data:
-                            st.session_state['res_data'] = json_data
+
+                        validated_cases, validation_status = validate_or_repair_cases(
+                            api_key,
+                            selected_model,
+                            resp_text
+                        )
+                        st.session_state['validation_status'] = validation_status
+                        if validated_cases is not None:
+                            st.session_state['res_data'] = validated_cases
+                            st.session_state['dedup_report'] = {
+                                "hard_removed": validation_status.get('hard_removed', []),
+                                "semantic_warnings": validation_status.get('semantic_warnings', [])
+                            }
                             st.session_state['eval_report'] = None # 重新生成后清空旧的评估报告
+                            if validation_status['status'] == 'repaired':
+                                st.toast("⚠️ 原始输出未通过校验，系统已自动修复并通过")
+                            hard_removed = validation_status.get('hard_removed', [])
+                            if hard_removed:
+                                st.toast(f"🧹 已自动移除 {len(hard_removed)} 条确定性重复用例")
+                            semantic_warnings = validation_status.get('semantic_warnings', [])
+                            if semantic_warnings:
+                                st.info(f"检测到 {len(semantic_warnings)} 条语义近似告警（未自动删除）")
+                        else:
+                            st.warning("本次输出未通过结构化校验，已保留上一版有效结果。")
                         
                         del st.session_state['current_prompt_content'] 
                         st.rerun()
@@ -240,23 +329,78 @@ def main():
                                 system_instruction=PromptManager.CORE_SYSTEM_PROMPT
                             )
                             
-                            explanation, new_json = split_text_and_json(resp_text)
+                            explanation, _ = split_text_and_json(resp_text)
                             st.markdown(explanation)
-                            if new_json:
+
+                            validated_cases, validation_status = validate_or_repair_cases(
+                                api_key,
+                                selected_model,
+                                resp_text
+                            )
+                            st.session_state['validation_status'] = validation_status
+                            if validated_cases is not None:
+                                st.session_state['dedup_report'] = {
+                                    "hard_removed": validation_status.get('hard_removed', []),
+                                    "semantic_warnings": validation_status.get('semantic_warnings', [])
+                                }
                                 with st.expander("查看数据详情"):
-                                    st.caption("数据已更新")
+                                    if validation_status['status'] == 'repaired':
+                                        st.caption("原始输出未通过校验，已自动修复并更新数据")
+                                    else:
+                                        st.caption("数据已更新并通过结构化校验")
+                                    hard_removed = validation_status.get('hard_removed', [])
+                                    if hard_removed:
+                                        st.caption(f"已自动硬去重 {len(hard_removed)} 条")
+                                    semantic_warnings = validation_status.get('semantic_warnings', [])
+                                    if semantic_warnings:
+                                        st.caption(f"检测到 {len(semantic_warnings)} 条语义近似告警（仅提示）")
                             
                             st.session_state['gemini_history'] = updated_history
                             st.session_state['messages'].append({"role": "assistant", "content": resp_text})
                             
-                            if new_json:
-                                st.session_state['res_data'] = new_json
+                            if validated_cases is not None:
+                                st.session_state['res_data'] = validated_cases
                                 st.session_state['eval_report'] = None # 数据更新后清空评估
                                 st.rerun()
+                            else:
+                                st.error("结构化校验失败，未更新右侧结果。")
+                                with st.expander("查看校验失败详情", expanded=False):
+                                    for err in validation_status.get('errors', []):
+                                        st.markdown(f"- {err}")
 
         # --- 右侧：预览、归档与评估 ---
         with col_preview:
             st.subheader("📄 实时结果预览")
+
+            validation_status = st.session_state.get('validation_status')
+            if validation_status:
+                status = validation_status.get('status')
+                if status == 'passed':
+                    st.success("✅ 结构化校验通过（首次输出即通过）")
+                elif status == 'repaired':
+                    st.warning("⚠️ 原始输出未通过校验，自动修复后通过")
+                elif status == 'failed':
+                    st.error("❌ 结构化校验失败（自动修复后仍失败）")
+                    with st.expander("查看失败原因", expanded=False):
+                        for err in validation_status.get('errors', []):
+                            st.markdown(f"- {err}")
+
+            dedup_report = st.session_state.get('dedup_report')
+            if dedup_report:
+                hard_removed = dedup_report.get('hard_removed', [])
+                semantic_warnings = dedup_report.get('semantic_warnings', [])
+                if hard_removed:
+                    st.success(f"🧹 已执行硬去重，移除 {len(hard_removed)} 条确定性重复")
+                    with st.expander("查看硬去重明细", expanded=False):
+                        for item in hard_removed:
+                            st.markdown(f"- 保留 {item.get('kept_id')}，移除 {item.get('removed_id')}（{item.get('reason')}）")
+                if semantic_warnings:
+                    st.warning(f"🔎 检测到 {len(semantic_warnings)} 条语义近似告警（未自动删除）")
+                    with st.expander("查看语义近似告警", expanded=False):
+                        for item in semantic_warnings:
+                            st.markdown(
+                                f"- {item.get('case_a')} vs {item.get('case_b')}，相似度 {item.get('similarity')}（{item.get('reason')}）"
+                            )
             
             if st.session_state['res_data']:
                 df = pd.DataFrame(st.session_state['res_data'])
@@ -305,16 +449,71 @@ def main():
                         report = st.session_state['eval_report']
                         
                         # 仪表盘
-                        c_score, c_sum = st.columns([1, 3])
-                        score = report.get('score', 0)
-                        
-                        # 颜色逻辑
-                        color = "normal"
-                        if score >= 90: color = "normal" # Streamlit metric 不支持直接绿色，这里用默认
-                        elif score < 60: color = "off" # 变灰或红
+                        c_total, c_rule, c_llm, c_cov = st.columns(4)
+                        c_total.metric("综合评分", f"{report.get('score', 0)} 分", delta=None)
+                        c_rule.metric("规则评分", f"{report.get('rule_score', 0)} 分", delta=None)
+                        c_llm.metric("LLM评分", f"{report.get('llm_score', 0)} 分", delta=None)
+                        c_cov.metric("覆盖率", f"{report.get('coverage_rate', 0)}%", delta=None)
 
-                        c_score.metric("质量评分", f"{score} 分", delta=None)
-                        c_sum.info(f"**总评**: {report.get('summary', '无')}")
+                        st.info(f"**总评**: {report.get('summary', '无')}")
+
+                        if report.get('score_breakdown'):
+                            breakdown = report.get('score_breakdown', {})
+                            rw = int((breakdown.get('rule_weight', 0)) * 100)
+                            lw = int((breakdown.get('llm_weight', 0)) * 100)
+                            st.caption(f"评分权重：规则 {rw}% + LLM {lw}%")
+
+                        total_reqs = report.get('total_requirements', 0)
+                        covered_reqs = report.get('covered_requirements', 0)
+                        st.caption(f"需求点覆盖：{covered_reqs}/{total_reqs}")
+
+                        if report.get('coverage_matrix'):
+                            with st.expander("🧭 查看覆盖率矩阵", expanded=False):
+                                matrix_df = pd.DataFrame(report.get('coverage_matrix', []))
+                                if not matrix_df.empty:
+                                    matrix_df['covered'] = matrix_df['covered'].map(lambda x: "是" if x else "否")
+                                    st.dataframe(
+                                        matrix_df[[
+                                            'requirement_id',
+                                            'requirement',
+                                            'covered',
+                                            'matched_case_id',
+                                            'matched_module',
+                                            'match_score'
+                                        ]],
+                                        use_container_width=True,
+                                        hide_index=True
+                                    )
+
+                        if report.get('uncovered_requirements'):
+                            with st.expander("📌 未覆盖需求点", expanded=False):
+                                for item in report.get('uncovered_requirements', []):
+                                    st.markdown(
+                                        f"- **{item.get('requirement_id')}** {item.get('requirement')} (匹配分: {item.get('best_score')})"
+                                    )
+
+                        if report.get('rule_checks'):
+                            with st.expander("📏 查看规则评分明细", expanded=False):
+                                for item in report.get('rule_checks', []):
+                                    name = item.get('name', '未知检查项')
+                                    score = item.get('score', 0)
+                                    max_score = item.get('max_score', 0)
+                                    detail = item.get('detail', '')
+                                    status = item.get('status', 'warn')
+                                    prefix = "✅" if status == "pass" else ("⚠️" if status == "warn" else "❌")
+                                    st.markdown(f"{prefix} **{name}**：{score}/{max_score}，{detail}")
+
+                        if report.get('rule_issues'):
+                            with st.expander("🧩 查看规则问题列表", expanded=False):
+                                for issue in report.get('rule_issues', []):
+                                    st.markdown(f"- {issue}")
+
+                        if report.get('semantic_duplicate_warnings'):
+                            with st.expander("🔎 评估阶段语义近似告警", expanded=False):
+                                for item in report.get('semantic_duplicate_warnings', []):
+                                    st.markdown(
+                                        f"- {item.get('case_a')} vs {item.get('case_b')}，相似度 {item.get('similarity')}（{item.get('reason')}）"
+                                    )
 
                         st.divider()
 
@@ -415,6 +614,278 @@ def main():
                                 else: st.code(content, language=lang)
         with col_kb: render_doc_list("knowledge", "技术规范", "📚")
         with col_hist: render_doc_list("history", "历史案例", "🕰️")
+
+    # ==================== Tab 3: 回归看板 ====================
+    with tab_regression:
+        st.header("📈 最小回归集与指标对比看板")
+        st.caption("对比 Baseline 与 Upgraded 的结构化、去重、规则分、覆盖率等关键指标。")
+
+        c_run, c_refresh = st.columns([1, 1])
+        if c_run.button("▶️ 运行最小回归套件", use_container_width=True):
+            with st.spinner("正在执行回归套件并生成对比报告..."):
+                report = run_regression_suite()
+                st.session_state['regression_report'] = report
+                st.success("回归报告已生成")
+
+        if c_refresh.button("🔄 读取最近一次报告", use_container_width=True):
+            report = load_latest_regression_report()
+            st.session_state['regression_report'] = report if report else None
+
+        report = st.session_state.get('regression_report')
+        if not report:
+            report = load_latest_regression_report()
+            if report:
+                st.session_state['regression_report'] = report
+
+        if not report:
+            st.info("暂无回归报告，请先点击“运行最小回归套件”。")
+        else:
+            st.caption(f"报告时间：{report.get('generated_at', '-')}")
+            st.caption(f"样本数：{report.get('suite_size', 0)}")
+
+            baseline = report.get('baseline', {})
+            upgraded = report.get('upgraded', {})
+            delta = report.get('delta', {})
+
+            st.markdown("### 📊 指标总览")
+            m1, m2, m3 = st.columns(3)
+            m1.metric(
+                "Schema通过率",
+                f"{upgraded.get('schema_pass_rate', 0)}%",
+                f"{delta.get('schema_pass_rate', 0)}%"
+            )
+            m2.metric(
+                "平均规则分",
+                f"{upgraded.get('avg_rule_score', 0)}",
+                f"{delta.get('avg_rule_score', 0)}"
+            )
+            m3.metric(
+                "平均覆盖率",
+                f"{upgraded.get('avg_coverage_rate', 0)}%",
+                f"{delta.get('avg_coverage_rate', 0)}%"
+            )
+
+            m4, m5, m6 = st.columns(3)
+            m4.metric(
+                "硬去重移除总数",
+                f"{upgraded.get('hard_duplicates_removed_total', 0)}",
+                f"+{delta.get('hard_duplicates_improvement', 0)}"
+            )
+            m5.metric(
+                "语义近似告警总数",
+                f"{upgraded.get('semantic_warnings_total', 0)}",
+                f"{delta.get('semantic_warnings_total', 0)}"
+            )
+            m6.metric(
+                "修复样本数",
+                f"{upgraded.get('repair_used_count', 0)}",
+                delta=None
+            )
+
+            with st.expander("📋 Baseline vs Upgraded 明细", expanded=False):
+                compare_rows = [
+                    {
+                        "指标": "解析成功率(%)",
+                        "Baseline": baseline.get('parse_success_rate', 0),
+                        "Upgraded": upgraded.get('parse_success_rate', 0),
+                        "Delta": delta.get('parse_success_rate', 0)
+                    },
+                    {
+                        "指标": "Schema通过率(%)",
+                        "Baseline": baseline.get('schema_pass_rate', 0),
+                        "Upgraded": upgraded.get('schema_pass_rate', 0),
+                        "Delta": delta.get('schema_pass_rate', 0)
+                    },
+                    {
+                        "指标": "平均规则分",
+                        "Baseline": baseline.get('avg_rule_score', 0),
+                        "Upgraded": upgraded.get('avg_rule_score', 0),
+                        "Delta": delta.get('avg_rule_score', 0)
+                    },
+                    {
+                        "指标": "平均覆盖率(%)",
+                        "Baseline": baseline.get('avg_coverage_rate', 0),
+                        "Upgraded": upgraded.get('avg_coverage_rate', 0),
+                        "Delta": delta.get('avg_coverage_rate', 0)
+                    },
+                    {
+                        "指标": "硬重复(基线识别) / 硬去重移除(升级后)",
+                        "Baseline": baseline.get('hard_duplicates_total', 0),
+                        "Upgraded": upgraded.get('hard_duplicates_removed_total', 0),
+                        "Delta": delta.get('hard_duplicates_improvement', 0)
+                    },
+                    {
+                        "指标": "语义近似告警总数",
+                        "Baseline": baseline.get('semantic_warnings_total', 0),
+                        "Upgraded": upgraded.get('semantic_warnings_total', 0),
+                        "Delta": delta.get('semantic_warnings_total', 0)
+                    }
+                ]
+                st.table(pd.DataFrame(compare_rows))
+
+            samples = report.get('samples', [])
+            if samples:
+                st.markdown("### 🧪 样本级回归结果")
+                sample_df = pd.DataFrame(samples)
+                st.dataframe(
+                    sample_df[[
+                        'id',
+                        'title',
+                        'baseline_schema_pass',
+                        'upgraded_schema_pass',
+                        'baseline_rule_score',
+                        'upgraded_rule_score',
+                        'baseline_coverage_rate',
+                        'upgraded_coverage_rate',
+                        'hard_removed',
+                        'semantic_warnings',
+                        'repair_used'
+                    ]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+    # ==================== Tab 4: RAG 评测看板 ====================
+    with tab_rag_eval:
+        st.header("🧪 RAG 离线评测看板")
+        st.caption("评测集驱动：自动计算 Recall@K、误召回率、幻觉率，并支持历史报告追踪。")
+
+        offline_eval_mode = st.checkbox(
+            "断网离线模式（不调用 API，使用本地词法召回）",
+            value=False,
+            help="开启后无需 API Key。若样本未提供 offline_answer，将仅评估召回指标，不计算幻觉率。"
+        )
+
+        run_col, refresh_col, history_col = st.columns([1, 1, 1])
+
+        if run_col.button("▶️ 运行 RAG 离线评测", use_container_width=True):
+            if (not offline_eval_mode) and (not api_key):
+                st.error("请先在左侧配置 API Key")
+            else:
+                with st.spinner("正在执行 RAG 离线评测并生成报告..."):
+                    report = run_rag_offline_evaluation(
+                        api_key=api_key if api_key else None,
+                        model_name=selected_model,
+                        offline_mode=offline_eval_mode
+                    )
+                    st.session_state['rag_eval_report'] = report
+                    st.session_state['rag_eval_history'] = list_rag_eval_reports()
+                    st.success("RAG 评测报告已生成")
+
+        if refresh_col.button("🔄 读取最新报告", use_container_width=True):
+            report = load_latest_rag_eval_report()
+            st.session_state['rag_eval_report'] = report if report else None
+
+        if history_col.button("🗂️ 刷新历史记录", use_container_width=True):
+            st.session_state['rag_eval_history'] = list_rag_eval_reports()
+
+        rag_report = st.session_state.get('rag_eval_report')
+        if not rag_report:
+            rag_report = load_latest_rag_eval_report()
+            if rag_report:
+                st.session_state['rag_eval_report'] = rag_report
+
+        history_rows = st.session_state.get('rag_eval_history', [])
+        if not history_rows:
+            history_rows = list_rag_eval_reports()
+            st.session_state['rag_eval_history'] = history_rows
+
+        if history_rows:
+            history_df = pd.DataFrame(history_rows)
+            with st.expander("📚 历史报告", expanded=False):
+                st.dataframe(
+                    history_df[[
+                        'file',
+                        'generated_at',
+                        'suite_name',
+                        'suite_size',
+                        'retrieval_mode',
+                        'recall_at_k',
+                        'false_recall_rate',
+                        'hallucination_rate'
+                    ]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                file_options = history_df['file'].tolist()
+                selected_file = st.selectbox("选择历史报告文件", file_options, key="rag_eval_history_file")
+                if st.button("📂 加载所选历史报告", use_container_width=True):
+                    selected_row = next((r for r in history_rows if r.get('file') == selected_file), None)
+                    if selected_row:
+                        loaded = load_rag_eval_report(selected_row.get('path', ''))
+                        if loaded:
+                            st.session_state['rag_eval_report'] = loaded
+                            rag_report = loaded
+                            st.success(f"已加载历史报告: {selected_file}")
+
+        if not rag_report:
+            st.info("暂无 RAG 评测报告，请先点击“运行 RAG 离线评测”。")
+        else:
+            st.caption(f"报告时间：{rag_report.get('generated_at', '-')}")
+            st.caption(f"评测集：{rag_report.get('suite_name', '-')}")
+            st.caption(f"样本数：{rag_report.get('suite_size', 0)}")
+            st.caption(f"评测模式：{rag_report.get('retrieval_mode', '-')}")
+
+            metrics = rag_report.get('metrics', {})
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Recall@K", f"{metrics.get('recall_at_k', 0)}%")
+            m2.metric("误召回率", f"{metrics.get('false_recall_rate', 0)}%")
+            hall_rate = metrics.get('hallucination_rate', None)
+            hall_rate_display = "-" if hall_rate is None else f"{hall_rate}%"
+            m3.metric("幻觉率", hall_rate_display)
+
+            m4, m5 = st.columns(2)
+            m4.metric("幻觉样本数", f"{metrics.get('hallucinated_samples', 0)}")
+            m5.metric("幻觉可评估样本", f"{metrics.get('hallucination_evaluable_samples', 0)}")
+
+            sample_rows = rag_report.get('samples', [])
+            if sample_rows:
+                st.markdown("### 🧾 样本级评测结果")
+                sample_df = pd.DataFrame(sample_rows)
+                sample_df['recall_at_k_display'] = sample_df['recall_at_k'].apply(
+                    lambda x: "-" if pd.isna(x) else f"{round(float(x) * 100, 1)}%"
+                )
+                sample_df['false_recall_rate_display'] = sample_df['false_recall_rate'].apply(
+                    lambda x: f"{round(float(x) * 100, 1)}%"
+                )
+                sample_df['hallucinated_display'] = sample_df['hallucinated'].apply(
+                    lambda x: "-" if pd.isna(x) else ("是" if bool(x) else "否")
+                )
+                sample_df['hit_sources_display'] = sample_df['hit_sources'].apply(
+                    lambda x: ", ".join(x) if isinstance(x, list) and x else "-"
+                )
+                sample_df['false_sources_display'] = sample_df['false_retrieved_sources'].apply(
+                    lambda x: ", ".join(x) if isinstance(x, list) and x else "-"
+                )
+                sample_df['hallucination_reason_display'] = sample_df['hallucination_reasons'].apply(
+                    lambda x: " | ".join(x) if isinstance(x, list) and x else "-"
+                )
+
+                st.dataframe(
+                    sample_df[[
+                        'id',
+                        'title',
+                        'recall_at_k_display',
+                        'false_recall_rate_display',
+                        'hallucinated_display',
+                        'hit_sources_display',
+                        'false_sources_display',
+                        'hallucination_reason_display'
+                    ]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                with st.expander("🔍 查看样本回答详情", expanded=False):
+                    for row in sample_rows:
+                        st.markdown(f"**{row.get('id', '')} - {row.get('title', '')}**")
+                        st.caption(f"问题: {row.get('query', '')}")
+                        st.info(row.get('answer', ''))
+                        st.caption(
+                            f"召回来源: {', '.join(row.get('retrieved_sources', [])) if row.get('retrieved_sources') else '-'}"
+                        )
+                        st.divider()
 
 if __name__ == "__main__":
     main()
